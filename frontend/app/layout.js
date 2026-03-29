@@ -19,7 +19,7 @@ export default function RootLayout({ children }) {
           <Header />
           <main className="min-h-screen">{children}</main>
           <Toaster richColors />
-          <footer className="bg-stone-100 border-t border-stone-200 mt-8">
+          <footer className="bg-stone-100 border-t border-stone-200 mt-10">
             <div className="max-w-7xl mx-auto px-6 py-16">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10">
                 {/* Brand */}
@@ -94,7 +94,7 @@ export default function RootLayout({ children }) {
                         href="tel:9556482091"
                         className="hover:text-orange-600 ml-1"
                       >
-                        9556482091
+                        +91 9556482091
                       </a>
                     </p>
 
@@ -103,7 +103,7 @@ export default function RootLayout({ children }) {
                         Email:
                       </span>
                       <a
-                        href="mailto:bidyasagarsahu5@gmail.com"
+                        href="mailto:barshapriyadarsani0@gmail.com"
                         className="hover:text-orange-600 ml-1"
                       >
                         bidyasagarsahu5@gmail.com

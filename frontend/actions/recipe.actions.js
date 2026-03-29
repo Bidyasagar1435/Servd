@@ -117,7 +117,6 @@ Rules:
       recipeSuggestions = JSON.parse(cleanText);
     } catch (parseError) {
       console.error("Failed to parse Gemini response: ", text);
-      console.log(text);
       throw new Error(
         "Failed to generate recipe suggestions. Please try again.",
       );
@@ -246,21 +245,6 @@ export async function getOrGenerateRecipe(formData) {
           isPro,
           message: "Recipe loaded from database",
         };
-
-        // const recipeFromDB = searchData.data[0];
-
-        // return {
-        //   success: true,
-        //   recipe: {
-        //     id: recipeFromDB.id,
-        //     ...recipeFromDB.attributes,
-        //   },
-        //   recipeId: recipeFromDB.id,
-        //   isSaved: isSaved,
-        //   fromDatabase: true,
-        //   isPro,
-        //   message: "Recipe loaded from database",
-        // };
       }
     }
 
@@ -434,11 +418,12 @@ export async function saveRecipeToCollection(formData) {
     }
 
     const recipeId = formData.get("recipeId");
+
     if (!recipeId) {
       throw new Error("Recipe ID is required");
     }
-    console.log(recipeId);
-    console.log("FORM DATA recipeId:", formData.get("recipeId"));
+    
+
 
     // Check if alredy saved
     const existingResponse = await fetch(
@@ -471,14 +456,13 @@ export async function saveRecipeToCollection(formData) {
       },
       body: JSON.stringify({
         data: {
-          user: user.id,
-          recipe: recipeId,
           savedAt: new Date().toISOString(),
+          recipe: { id: Number(recipeId) },
+          user: { id: Number(user.id) },
         },
       }),
     });
-    console.log("Saving recipe>>>>>>>>>>>>", recipeId);
-    // console.log("USER->>>>", user);
+   
 
     if (!saveResponse.ok) {
       const errorText = await saveResponse.text();
@@ -573,8 +557,6 @@ export async function getSavedRecipes() {
       throw new Error("User not authenticated");
     }
 
-    // console.log("Clerk User >>>>>>>>>>>:", user);
-
     // Fetch saved recipes with populated recipe data
     const response = await fetch(
       `${STRAPI_URL}/api/saved-recipes?filters[user][id][$eq]=${user.id}&populate[recipe][populate]=*&sort=savedAt:desc`,
@@ -595,13 +577,12 @@ export async function getSavedRecipes() {
     }
 
     const data = await response.json();
-    console.log("STRAPI RESPONSE:>>>>>>>>", JSON.stringify(data, null, 2));
 
     // Extract recipes from saved-recipes relations
     const recipes = data.data
       .map((savedRecipe) => savedRecipe.recipe)
-      .filter((recipe) => recipe !== null); // Removed any null recipe
-    //     console.log("recipes>>>>>>>>>", recipes);
+      .filter(Boolean); // Removed any null recipe
+   
     return {
       success: true,
       recipes,

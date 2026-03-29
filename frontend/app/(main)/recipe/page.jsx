@@ -47,7 +47,6 @@ function RecipeContent() {
     data: recipeData,
     fn: fetchRecipe,
   } = useFetch(getOrGenerateRecipe);
-  console.log(recipeData);
 
   // Save to collection
   const {
