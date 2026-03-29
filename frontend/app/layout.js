@@ -4,6 +4,7 @@ import Header from "@/components/Header";
 import { ClerkProvider } from "@clerk/nextjs";
 import { neobrutalism } from "@clerk/themes";
 import { Toaster } from "@/components/ui/sonner";
+import HomeFooter from "@/components/HomeFooter";
 
 const inter = Inter({ subsets: ["latin"] });
 export const metadata = {
@@ -19,113 +20,7 @@ export default function RootLayout({ children }) {
           <Header />
           <main className="min-h-screen">{children}</main>
           <Toaster richColors />
-          <footer className="bg-stone-100 border-t border-stone-200 mt-10">
-            <div className="max-w-7xl mx-auto px-6 py-16">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10">
-                {/* Brand */}
-                <div>
-                  <h2 className="text-2xl font-bold text-stone-900 mb-4">
-                    Servd
-                  </h2>
-                  <p className="text-stone-600 text-sm leading-relaxed">
-                    Turn your leftovers into masterpieces with AI powered
-                    cooking assistance. Reduce food waste and cook smarter every
-                    day.
-                  </p>
-                </div>
-
-                {/* Product */}
-                <div>
-                  <h3 className="font-semibold text-stone-900 mb-4">Product</h3>
-                  <ul className="space-y-2 text-sm text-stone-600">
-                    <li className="hover:text-orange-600 cursor-pointer">
-                      Scan Pantry
-                    </li>
-                    <li className="hover:text-orange-600 cursor-pointer">
-                      AI Recipes
-                    </li>
-                    <li className="hover:text-orange-600 cursor-pointer">
-                      Digital Cookbook
-                    </li>
-                    <li className="hover:text-orange-600 cursor-pointer">
-                      Pricing
-                    </li>
-                  </ul>
-                </div>
-
-                {/* Resources */}
-                <div>
-                  <h3 className="font-semibold text-stone-900 mb-4">
-                    Resources
-                  </h3>
-                  <ul className="space-y-2 text-sm text-stone-600">
-                    <li className="hover:text-orange-600 cursor-pointer">
-                      How it Works
-                    </li>
-                    <li className="hover:text-orange-600 cursor-pointer">
-                      Help Center
-                    </li>
-                    <li className="hover:text-orange-600 cursor-pointer">
-                      Privacy Policy
-                    </li>
-                    <li className="hover:text-orange-600 cursor-pointer">
-                      Terms
-                    </li>
-                  </ul>
-                </div>
-
-                {/* Contact */}
-                <div>
-                  <h3 className="font-semibold text-stone-900 mb-4">Contact</h3>
-
-                  <div className="space-y-2 text-sm text-stone-600">
-                    <p>
-                      <span className="font-semibold text-stone-800">
-                        Name:
-                      </span>{" "}
-                      Bidyasagar Sahu
-                    </p>
-
-                    <p>
-                      <span className="font-semibold text-stone-800">
-                        Phone:
-                      </span>
-                      <a
-                        href="tel:9556482091"
-                        className="hover:text-orange-600 ml-1"
-                      >
-                        +91 9556482091
-                      </a>
-                    </p>
-
-                    <p>
-                      <span className="font-semibold text-stone-800">
-                        Email:
-                      </span>
-                      <a
-                        href="mailto:barshapriyadarsani0@gmail.com"
-                        className="hover:text-orange-600 ml-1"
-                      >
-                        bidyasagarsahu5@gmail.com
-                      </a>
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bottom bar */}
-              <div className="border-t border-stone-200 mt-12 pt-6 flex flex-col md:flex-row items-center justify-between text-sm text-stone-500">
-                <p>© {new Date().getFullYear()} Servd. All rights reserved.</p>
-
-                <p className="mt-2 md:mt-0">
-                  Made with ❤️ by{" "}
-                  <span className="text-orange-600 font-semibold">
-                    Bidyasagar Sahu
-                  </span>
-                </p>
-              </div>
-            </div>
-          </footer>
+          <HomeFooter />
         </body>
       </html>
     </ClerkProvider>
