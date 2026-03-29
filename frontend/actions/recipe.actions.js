@@ -10,6 +10,8 @@ const STRAPI_URL =
 const STRAPI_API_TOKEN = process.env.STRAPI_API_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const UNSPLASH_ACCESS_KEY = process.env.UNSPLASH_ACCESS_KEY;
+console.log(GEMINI_API_KEY, +"<<< GEMINI_API_KEY loaded");
+
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
