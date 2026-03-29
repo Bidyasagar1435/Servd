@@ -1,5 +1,9 @@
 import arcjet, { detectBot, shield, tokenBucket } from "@arcjet/next";
 
+if (!process.env.ARCJET_ENV && process.env.NODE_ENV !== "production") {
+  process.env.ARCJET_ENV = "development";
+}
+
 export const aj = arcjet({
   key: process.env.NEXT_PUBLIC_ARCJET_KEY,
   rules: [

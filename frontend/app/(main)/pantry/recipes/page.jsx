@@ -98,6 +98,17 @@ const PantryRecipesPage = () => {
               </div>
             </div>
           )}
+
+          {!loading && recipesData?.isFallback && recipesData?.message && (
+            <div className="mt-4 bg-white p-4 border-2 border-stone-200">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-orange-600 mt-0.5 shrink-0" />
+                <p className="text-stone-700 text-sm font-light">
+                  {recipesData.message}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Loading state  */}

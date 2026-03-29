@@ -40,6 +40,7 @@ function RecipeContent() {
   const [recipe, setRecipe] = useState(null);
   const [recipeId, setRecipeId] = useState(null);
   const [isSaved, setIsSaved] = useState(false);
+  const [isFallback, setIsFallback] = useState(false);
 
   // Get or generate recipe
   const {
@@ -62,6 +63,8 @@ function RecipeContent() {
     fn: removeToCollection,
   } = useFetch(removeRecipeFromCollection);
 
+  const saveDisabled = saving || removing || !recipeId || isFallback;
+
   // Handle save success
   useEffect(() => {
     if (saveData?.success) {
@@ -83,7 +86,7 @@ function RecipeContent() {
   }, [removeData]);
 
   const handleToggleSave = async () => {
-    if (!recipe) return;
+    if (!recipe || !recipeId || isFallback) return;
 
     const formData = new FormData();
     formData.append("recipeId", recipeId);
@@ -110,8 +113,11 @@ function RecipeContent() {
       setRecipe(recipeData.recipe);
       setRecipeId(recipeData.recipeId);
       setIsSaved(recipeData.isSaved);
+      setIsFallback(!!recipeData.isFallback);
 
-      if (recipeData.fromDatabase) {
+      if (recipeData.message) {
+        toast.info(recipeData.message);
+      } else if (recipeData.fromDatabase) {
         toast.success("Recipe loaded from database");
       } else {
         toast.success("New recipe generate and saved!");
@@ -275,7 +281,7 @@ function RecipeContent() {
             <div className="flex flex-wrap gap-3">
               <Button
                 onClick={handleToggleSave}
-                disabled={saving || removing}
+                disabled={saveDisabled}
                 className={`${isSaved ? "bg-green-600 hover:bg-green-700 border-2 border-green-700" : "bg-orange-600 hover:bg-orange-700 border-2 border-orange-700"} text-white gap-2 transition-all`}
               >
                 {saving || removing ? (
@@ -287,6 +293,11 @@ function RecipeContent() {
                   <>
                     <BookmarkCheck className="w-4 h-4" />
                     Saved to Collection
+                  </>
+                ) : saveDisabled ? (
+                  <>
+                    <Bookmark className="w-4 h-4" />
+                    Save Unavailable
                   </>
                 ) : (
                   <>

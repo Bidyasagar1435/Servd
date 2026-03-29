@@ -13,16 +13,249 @@ const UNSPLASH_ACCESS_KEY = process.env.UNSPLASH_ACCESS_KEY;
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
+function classifyGeminiError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  const status = error?.status ?? error?.code;
+
+  const isQuota =
+    status === 429 ||
+    message.includes("resource_exhausted") ||
+    message.includes("quota") ||
+    message.includes("rate limit") ||
+    message.includes("too many requests") ||
+    message.includes("exceeded");
+
+  const isAuth =
+    status === 401 ||
+    status === 403 ||
+    message.includes("api key") ||
+    message.includes("permission") ||
+    message.includes("unauthorized") ||
+    message.includes("forbidden");
+
+  return { isQuota, isAuth, status, message };
+}
+
+async function fetchRecentPublicRecipesFallback({ limit = 5 } = {}) {
+  try {
+    const response = await fetch(
+      `${STRAPI_URL}/api/recipes?filters[isPublic][$eq]=true&sort=publishedAt:desc&pagination[pageSize]=${limit}&populate=*`,
+      {
+        headers: {
+          Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+        },
+        cache: "no-store",
+      },
+    );
+
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data?.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+async function fetchSimilarRecipesFallback(title, { limit = 1 } = {}) {
+  try {
+    const response = await fetch(
+      `${STRAPI_URL}/api/recipes?filters[title][$containsi]=${encodeURIComponent(
+        title,
+      )}&sort=publishedAt:desc&pagination[pageSize]=${limit}&populate=*`,
+      {
+        headers: {
+          Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+        },
+        cache: "no-store",
+      },
+    );
+
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data?.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function blocksToText(blocks) {
+  if (!Array.isArray(blocks)) return "";
+
+  const parts = [];
+  const walk = (node) => {
+    if (!node) return;
+    if (typeof node === "string") {
+      parts.push(node);
+      return;
+    }
+    if (typeof node?.text === "string") {
+      parts.push(node.text);
+      return;
+    }
+    const children = node?.children;
+    if (Array.isArray(children)) {
+      for (const child of children) walk(child);
+      parts.push("\n");
+    }
+  };
+
+  for (const block of blocks) walk(block);
+  return parts
+    .join("")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function normalizeStrapiRecipe(entity) {
+  if (!entity) return null;
+
+  const base =
+    entity?.attributes && typeof entity.attributes === "object"
+      ? { id: entity.id, ...entity.attributes }
+      : entity;
+
+  const description = Array.isArray(base.description)
+    ? blocksToText(base.description)
+    : base.description;
+
+  return {
+    ...base,
+    description,
+  };
+}
+
+function buildFallbackRecipeTemplate(title) {
+  return {
+    title,
+    description:
+      "AI generation is temporarily unavailable, so here’s a simple fallback template you can follow and customize.",
+    category: "dinner",
+    cuisine: "other",
+    prepTime: 10,
+    cookTime: 20,
+    servings: 2,
+    ingredients: [
+      {
+        item: "Main ingredient",
+        amount: "as needed",
+        category: "Other",
+      },
+      {
+        item: "Salt",
+        amount: "to taste",
+        category: "Spice",
+      },
+      {
+        item: "Oil",
+        amount: "1 tbsp",
+        category: "Other",
+      },
+    ],
+    instructions: [
+      {
+        step: 1,
+        title: "Prep",
+        instruction:
+          "Gather ingredients and prep (wash/chop) anything that needs it.",
+        tip: "Prep first to cook faster.",
+      },
+      {
+        step: 2,
+        title: "Cook",
+        instruction:
+          "Cook your main ingredient using your preferred method (pan, oven, air fryer) until done.",
+        tip: "Adjust heat to avoid burning.",
+      },
+      {
+        step: 3,
+        title: "Season & Serve",
+        instruction:
+          "Season to taste, plate it up, and serve warm. Add a simple side if you want.",
+        tip: "Taste and adjust salt at the end.",
+      },
+    ],
+    nutrition: {},
+    tips: ["Start simple, then add herbs/spices you like."],
+    substitutions: [],
+    imageUrl: "",
+  };
+}
+
+function buildPantryFallbackSuggestions(ingredientsText) {
+  const parts = String(ingredientsText || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const a = parts[0] || "Pantry";
+  const b = parts[1] || "Veggies";
+  const c = parts[2] || "Spices";
+
+  return [
+    {
+      title: `Quick ${a} Stir-Fry`,
+      description: `A simple stir-fry using ${a}, ${b}, and ${c}.`,
+      matchPercentage: 60,
+      missingIngredients: ["oil", "salt", "pepper"],
+      category: "dinner",
+      cuisine: "other",
+      prepTime: 10,
+      cookTime: 15,
+      servings: 2,
+    },
+    {
+      title: `${a} & ${b} Salad Bowl`,
+      description: `A fresh bowl that works with whatever you have on hand, centered around ${a} and ${b}.`,
+      matchPercentage: 55,
+      missingIngredients: ["lemon or vinegar", "olive oil"],
+      category: "lunch",
+      cuisine: "other",
+      prepTime: 12,
+      cookTime: 0,
+      servings: 2,
+    },
+    {
+      title: `Simple ${a} Soup`,
+      description: `A cozy soup using ${a} and pantry basics—adjust thickness and seasoning to taste.`,
+      matchPercentage: 50,
+      missingIngredients: ["water or stock", "salt"],
+      category: "dinner",
+      cuisine: "other",
+      prepTime: 10,
+      cookTime: 25,
+      servings: 3,
+    },
+    {
+      title: `${b} Omelet (Optional ${a})`,
+      description: `A quick omelet-style dish—add ${a} if it fits, otherwise keep it simple.`,
+      matchPercentage: 45,
+      missingIngredients: ["eggs"],
+      category: "breakfast",
+      cuisine: "other",
+      prepTime: 8,
+      cookTime: 8,
+      servings: 1,
+    },
+    {
+      title: `Sheet-Pan ${a} & ${b}`,
+      description: `Roast ${a} and ${b} with your favorite seasoning for an easy hands-off meal.`,
+      matchPercentage: 50,
+      missingIngredients: ["oil", "salt"],
+      category: "dinner",
+      cuisine: "other",
+      prepTime: 10,
+      cookTime: 30,
+      servings: 2,
+    },
+  ];
+}
+
 export async function getRecipesByPantryIngredients() {
   try {
     const user = await checkUser();
 
     if (!user) {
       throw new Error("User not authenticated");
-    }
-
-    if (!GEMINI_API_KEY) {
-      throw new Error("GEMINI_API_KEY is missing");
     }
 
     const isPro = user.subscriptionTier === "pro";
@@ -73,40 +306,84 @@ export async function getRecipesByPantryIngredients() {
 
     const ingredients = pantryData.data.map((item) => item.name).join(", ");
 
+    if (!GEMINI_API_KEY) {
+      const fallbackRecipes = await fetchRecentPublicRecipesFallback({
+        limit: 5,
+      });
+
+      return {
+        success: true,
+        recipes:
+          fallbackRecipes.length > 0
+            ? fallbackRecipes.map(normalizeStrapiRecipe).filter(Boolean)
+            : buildPantryFallbackSuggestions(ingredients),
+        ingredientsUsed: ingredients,
+        isFallback: true,
+        recommendationsLimit: isPro ? "unlimited" : 5,
+        message:
+          "AI recommendations are currently unavailable. Showing fallback suggestions instead.",
+      };
+    }
+
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash-lite",
+      model: "gemini-2.5-flash",
     });
 
     const prompt = `
-You are a professional chef. Given these available ingredients: ${ingredients}
+    You are a professional chef. Given these available ingredients: ${ingredients}
 
-Suggest 5 recipes that can be made primarily with these ingredients. It's okay if the recipes need 1-2 common pantry staples (salt, pepper, oil, etc.) that aren't listed.
+    Suggest 5 recipes that can be made primarily with these ingredients. It's okay if the recipes need 1-2 common pantry staples (salt, pepper, oil, etc.) that aren't listed.
 
-Return ONLY a valid JSON array (no markdown, no explanations):
-[
-  {
-    "title": "Recipe name",
-    "description": "Brief 1-2 sentence description",
-    "matchPercentage": 85,
-    "missingIngredients": ["ingredient1", "ingredient2"],
-    "category": "breakfast|lunch|dinner|snack|dessert",
-    "cuisine": "italian|chinese|mexican|etc",
-    "prepTime": 20,
-    "cookTime": 30,
-    "servings": 4
-  }
-]
+    Return ONLY a valid JSON array (no markdown, no explanations):
+    [
+      {
+        "title": "Recipe name",
+        "description": "Brief 1-2 sentence description",
+        "matchPercentage": 85,
+        "missingIngredients": ["ingredient1", "ingredient2"],
+        "category": "breakfast|lunch|dinner|snack|dessert",
+        "cuisine": "italian|chinese|mexican|etc",
+        "prepTime": 20,
+        "cookTime": 30,
+        "servings": 4
+      }
+    ]
 
-Rules:
-- matchPercentage should be 70-100% (how many listed ingredients are used)
-- missingIngredients should be common items or optional additions
-- Sort by matchPercentage descending
-- Make recipes realistic and delicious
-`;
+    Rules:
+    - matchPercentage should be 70-100% (how many listed ingredients are used)
+    - missingIngredients should be common items or optional additions
+    - Sort by matchPercentage descending
+    - Make recipes realistic and delicious
+    `;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    let text;
+    try {
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      text = response.text();
+    } catch (error) {
+      const { isQuota, isAuth } = classifyGeminiError(error);
+      if (isQuota || isAuth) {
+        const fallbackRecipes = await fetchRecentPublicRecipesFallback({
+          limit: 5,
+        });
+
+        return {
+          success: true,
+          recipes:
+            fallbackRecipes.length > 0
+              ? fallbackRecipes.map(normalizeStrapiRecipe).filter(Boolean)
+              : buildPantryFallbackSuggestions(ingredients),
+          ingredientsUsed: ingredients,
+          isFallback: true,
+          recommendationsLimit: isPro ? "unlimited" : 5,
+          message:
+            "AI tokens are exhausted or unavailable right now. Showing recent public recipes instead.",
+        };
+      }
+
+      throw error;
+    }
 
     let recipeSuggestions;
     try {
@@ -183,6 +460,68 @@ function normalizeTitle(title) {
     .join(" ");
 }
 
+function normalizeCategory(category) {
+  const value = String(category || "")
+    .trim()
+    .toLowerCase();
+
+  const allowed = new Set(["breakfast", "lunch", "dinner", "snack", "dessert"]);
+  return allowed.has(value) ? value : "dinner";
+}
+
+function normalizeCuisine(cuisine) {
+  const raw = String(cuisine || "").trim().toLowerCase();
+
+  if (
+    raw === "middle eastern" ||
+    raw === "middle-eastern" ||
+    raw === "middle eastern cuisine" ||
+    raw === "middle-eastern cuisine"
+  ) {
+    return "middle - eastern";
+  }
+
+  const allowed = new Set([
+    "italian",
+    "chinese",
+    "mexican",
+    "indian",
+    "american",
+    "thai",
+    "japanese",
+    "mediterranean",
+    "french",
+    "korean",
+    "vietnamese",
+    "spanish",
+    "greek",
+    "turkish",
+    "moroccan",
+    "brazilian",
+    "caribbean",
+    "middle - eastern",
+    "british",
+    "german",
+    "portuguese",
+    "other",
+  ]);
+
+  return allowed.has(raw) ? raw : "other";
+}
+
+function toStrapiBlocks(value) {
+  if (Array.isArray(value)) return value;
+  const text = String(value || "").trim();
+  if (!text) return [];
+
+  return [
+    {
+      type: "paragraph",
+      children: [{ type: "text", text }],
+    },
+  ];
+}
+
 // Get or generate recipe details
 export async function getOrGenerateRecipe(formData) {
   try {
@@ -219,6 +558,8 @@ export async function getOrGenerateRecipe(formData) {
       const searchData = await searchResponse.json();
 
       if (searchData.data && searchData.data.length > 0) {
+        const recipeFromDb = normalizeStrapiRecipe(searchData.data[0]);
+
         // Check if user has saved this recipe
         const savedRecipeResponse = await fetch(
           `${STRAPI_URL}/api/saved-recipes?filters[user][id][$eq]=${user.id}&filters[recipe][id][$eq]=${searchData.data[0].id}`,
@@ -238,8 +579,8 @@ export async function getOrGenerateRecipe(formData) {
 
         return {
           success: true,
-          recipe: searchData.data[0],
-          recipeId: searchData.data[0].id,
+          recipe: recipeFromDb,
+          recipeId: recipeFromDb?.id ?? searchData.data[0].id,
           isSaved: isSaved,
           fromDatabase: true,
           isPro,
@@ -249,82 +590,140 @@ export async function getOrGenerateRecipe(formData) {
     }
 
     // Step 2: Recipe doesn't exist, generate with Gemini
+    if (!GEMINI_API_KEY) {
+      const fallbackRecipe = buildFallbackRecipeTemplate(normalizedTitle);
+      return {
+        success: true,
+        recipe: fallbackRecipe,
+        recipeId: null,
+        isSaved: false,
+        fromDatabase: false,
+        isFallback: true,
+        recommendationsLimit: isPro ? "unlimited" : 5,
+        isPro,
+        message:
+          "AI generation is currently unavailable. Showing a simple fallback recipe template (not saved).",
+      };
+    }
+
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash-lite",
+      model: "gemini-2.5-flash",
     });
 
     const prompt = `
-You are a professional chef and recipe expert. Generate a detailed recipe for: "${normalizedTitle}"
+    You are a professional chef and recipe expert. Generate a detailed recipe for: "${normalizedTitle}"
 
-CRITICAL: The "title" field MUST be EXACTLY: "${normalizedTitle}" (no changes, no additions like "Classic" or "Easy")
+    CRITICAL: The "title" field MUST be EXACTLY: "${normalizedTitle}" (no changes, no additions like "Classic" or "Easy")
 
-Return ONLY a valid JSON object with this exact structure (no markdown, no explanations):
-{
-  "title": "${normalizedTitle}",
-  "description": "Brief 2-3 sentence description of the dish",
-  "category": "Must be ONE of these EXACT values: breakfast, lunch, dinner, snack, dessert",
-  "cuisine": "Must be ONE of these EXACT values: italian, chinese, mexican, indian, american, thai, japanese, mediterranean, french, korean, vietnamese, spanish, greek, turkish, moroccan, brazilian, caribbean, middle-eastern, british, german, portuguese, other",
-  "prepTime": "Time in minutes (number only)",
-  "cookTime": "Time in minutes (number only)",
-  "servings": "Number of servings (number only)",
-  "ingredients": [
+    Return ONLY a valid JSON object with this exact structure (no markdown, no explanations):
     {
-      "item": "ingredient name",
-      "amount": "quantity with unit",
-      "category": "Protein|Vegetable|Spice|Dairy|Grain|Other"
+      "title": "${normalizedTitle}",
+      "description": "Brief 2-3 sentence description of the dish",
+      "category": "Must be ONE of these EXACT values: breakfast, lunch, dinner, snack, dessert",
+      "cuisine": "Must be ONE of these EXACT values: italian, chinese, mexican, indian, american, thai, japanese, mediterranean, french, korean, vietnamese, spanish, greek, turkish, moroccan, brazilian, caribbean, middle - eastern, british, german, portuguese, other",
+      "prepTime": "Time in minutes (number only)",
+      "cookTime": "Time in minutes (number only)",
+      "servings": "Number of servings (number only)",
+      "ingredients": [
+        {
+          "item": "ingredient name",
+          "amount": "quantity with unit",
+          "category": "Protein|Vegetable|Spice|Dairy|Grain|Other"
+        }
+      ],
+      "instructions": [
+        {
+          "step": 1,
+          "title": "Brief step title",
+          "instruction": "Detailed step instruction",
+          "tip": "Optional cooking tip for this step"
+        }
+      ],
+      "nutrition": {
+        "calories": "calories per serving",
+        "protein": "grams",
+        "carbs": "grams",
+        "fat": "grams"
+      },
+      "tips": [
+        "General cooking tip 1",
+        "General cooking tip 2",
+        "General cooking tip 3"
+      ],
+      "substitutions": [
+        {
+          "original": "ingredient name",
+          "alternatives": ["substitute 1", "substitute 2"]
+        }
+      ]
     }
-  ],
-  "instructions": [
-    {
-      "step": 1,
-      "title": "Brief step title",
-      "instruction": "Detailed step instruction",
-      "tip": "Optional cooking tip for this step"
+
+    IMPORTANT RULES FOR CATEGORY:
+    - Breakfast items (pancakes, eggs, cereal, etc.) → "breakfast"
+    - Main meals for midday (sandwiches, salads, pasta, etc.) → "lunch"
+    - Main meals for evening (heavier dishes, roasts, etc.) → "dinner"
+    - Light items between meals (chips, crackers, fruit, etc.) → "snack"
+    - Sweet treats (cakes, cookies, ice cream, etc.) → "dessert"
+
+    IMPORTANT RULES FOR CUISINE:
+    - Use lowercase only
+    - Pick the closest match from the allowed values
+    - If uncertain, use "other"
+
+    Guidelines:
+    - Make ingredients realistic and commonly available
+    - Instructions should be clear and beginner-friendly
+    - Include 6-10 detailed steps
+    - Provide practical cooking tips
+    - Estimate realistic cooking times
+    - Keep total instructions under 12 steps
+    `;
+
+    let text;
+    try {
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      text = response.text();
+    } catch (error) {
+      const { isQuota, isAuth } = classifyGeminiError(error);
+      if (isQuota || isAuth) {
+        const similar = await fetchSimilarRecipesFallback(normalizedTitle, {
+          limit: 1,
+        });
+
+        if (similar.length > 0) {
+          const recipeFromDb = normalizeStrapiRecipe(similar[0]);
+          return {
+            success: true,
+            recipe: recipeFromDb,
+            recipeId: recipeFromDb?.id ?? null,
+            isSaved: false,
+            fromDatabase: true,
+            isFallback: true,
+            recommendationsLimit: isPro ? "unlimited" : 5,
+            isPro,
+            message:
+              "AI tokens are exhausted or unavailable right now. Loaded a similar recipe from the database instead.",
+          };
+        }
+
+        const fallbackRecipe = buildFallbackRecipeTemplate(normalizedTitle);
+        return {
+          success: true,
+          recipe: fallbackRecipe,
+          recipeId: null,
+          isSaved: false,
+          fromDatabase: false,
+          isFallback: true,
+          recommendationsLimit: isPro ? "unlimited" : 5,
+          isPro,
+          message:
+            "AI tokens are exhausted or unavailable right now. Showing a simple fallback recipe template (not saved).",
+        };
+      }
+
+      throw error;
     }
-  ],
-  "nutrition": {
-    "calories": "calories per serving",
-    "protein": "grams",
-    "carbs": "grams",
-    "fat": "grams"
-  },
-  "tips": [
-    "General cooking tip 1",
-    "General cooking tip 2",
-    "General cooking tip 3"
-  ],
-  "substitutions": [
-    {
-      "original": "ingredient name",
-      "alternatives": ["substitute 1", "substitute 2"]
-    }
-  ]
-}
-
-IMPORTANT RULES FOR CATEGORY:
-- Breakfast items (pancakes, eggs, cereal, etc.) → "breakfast"
-- Main meals for midday (sandwiches, salads, pasta, etc.) → "lunch"
-- Main meals for evening (heavier dishes, roasts, etc.) → "dinner"
-- Light items between meals (chips, crackers, fruit, etc.) → "snack"
-- Sweet treats (cakes, cookies, ice cream, etc.) → "dessert"
-
-IMPORTANT RULES FOR CUISINE:
-- Use lowercase only
-- Pick the closest match from the allowed values
-- If uncertain, use "other"
-
-Guidelines:
-- Make ingredients realistic and commonly available
-- Instructions should be clear and beginner-friendly
-- Include 6-10 detailed steps
-- Provide practical cooking tips
-- Estimate realistic cooking times
-- Keep total instructions under 12 steps
-`;
-
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
 
     // Parse JSON response
     let recipeData;
@@ -342,8 +741,8 @@ Guidelines:
     // FORCE the title to be our normalized version
     recipeData.title = normalizedTitle;
 
-    const category = recipeData.category.toLowerCase();
-    const cuisine = recipeData.cuisine.toLowerCase();
+    const category = normalizeCategory(recipeData.category);
+    const cuisine = normalizeCuisine(recipeData.cuisine);
 
     // Step 3: Fetch image from Unsplash
     const imageUrl = await fetchRecipeImage(normalizedTitle);
@@ -352,7 +751,7 @@ Guidelines:
     const strapiRecipeData = {
       data: {
         title: normalizedTitle,
-        description: recipeData.description,
+        description: toStrapiBlocks(recipeData.description),
         cuisine,
         category,
         ingredients: recipeData.ingredients,
@@ -365,7 +764,7 @@ Guidelines:
         substitutions: recipeData.substitutions,
         imageUrl: imageUrl || "",
         isPublic: true,
-        user: user.id,
+        author: user.id,
       },
     };
 
@@ -422,8 +821,6 @@ export async function saveRecipeToCollection(formData) {
     if (!recipeId) {
       throw new Error("Recipe ID is required");
     }
-    
-
 
     // Check if alredy saved
     const existingResponse = await fetch(
@@ -462,7 +859,7 @@ export async function saveRecipeToCollection(formData) {
         },
       }),
     });
-   
+
 
     if (!saveResponse.ok) {
       const errorText = await saveResponse.text();
@@ -579,10 +976,17 @@ export async function getSavedRecipes() {
     const data = await response.json();
 
     // Extract recipes from saved-recipes relations
-    const recipes = data.data
-      .map((savedRecipe) => savedRecipe.recipe)
-      .filter(Boolean); // Removed any null recipe
-   
+    const recipes = (data?.data ?? [])
+      .map((savedRecipe) => {
+        const recipeEntity =
+          savedRecipe?.recipe?.data ??
+          savedRecipe?.attributes?.recipe?.data ??
+          savedRecipe?.recipe ??
+          savedRecipe?.attributes?.recipe;
+        return normalizeStrapiRecipe(recipeEntity);
+      })
+      .filter(Boolean);
+
     return {
       success: true,
       recipes,
