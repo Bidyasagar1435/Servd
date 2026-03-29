@@ -3,12 +3,12 @@ import React from "react";
 const HomeFooter = () => {
   return (
     <>
-      <footer className="bg-gradient-to-br from-stone-100 to-orange-50 border-t border-stone-200 mt-16">
+      <footer className="bg-linear-to-br from-stone-100 to-orange-50 border-t border-stone-200 mt-16">
         <div className="max-w-7xl mx-auto px-6 py-16">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10">
             {/* Brand */}
             <div>
-              <h2 className="text-3xl font-extrabold bg-gradient-to-r from-orange-600 to-amber-400 bg-clip-text text-transparent mb-4">
+              <h2 className="text-3xl font-extrabold bg-linear-to-r from-orange-600 to-amber-400 bg-clip-text text-transparent mb-4">
                 Servd
               </h2>
               <p className="text-stone-600 text-sm leading-relaxed">
